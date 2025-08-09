@@ -1,0 +1,127 @@
+{
+  "tables": [
+    {
+      "tableName": "shopping-cart-single-table",
+      "partitionKey": {
+        "name": "pk",
+        "type": "S"
+      },
+      "sortKey": {
+        "name": "sk",
+        "type": "S"
+      },
+      "globalSecondaryIndexes": [
+        {
+          "indexName": "gsi_type",
+          "partitionKey": {
+            "name": "type",
+            "type": "S"
+          },
+          "sortKey": {
+            "name": "sk",
+            "type": "S"
+          },
+          "projection": "ALL"
+        }
+      ],
+      "item_structures": {
+        "user": {
+          "pk": "USER#{user_id}",
+          "sk": "PROFILE",
+          "type": "USER",
+          "username": "string",
+          "email": "string",
+          "user_currency": "string",
+          "is_deleted": "boolean",
+          "version": "number"
+        },
+        "product_category": {
+            "pk": "CATEGORY#{category_id}",
+            "sk": "METADATA",
+            "type": "PRODUCT_CATEGORY",
+            "name": "string",
+            "version": "number"
+        },
+        "product": {
+          "pk": "PRODUCT#{product_id}",
+          "sk": "METADATA",
+          "type": "PRODUCT",
+          "name": "string",
+          "category_id": "string",
+          "base_currency": "string",
+          "sku": "string",
+          "is_deleted": "boolean",
+          "version": "number"
+        },
+        "cart": {
+          "pk": "USER#{user_id}",
+          "sk": "CART",
+          "type": "CART",
+          "status": "string (ACTIVE, CHECKED_OUT, ABANDONED)",
+          "is_deleted": "boolean",
+          "version": "number"
+        },
+        "cart_item": {
+          "pk": "USER#{user_id}",
+          "sk": "ITEM#{product_id}",
+          "type": "CART_ITEM",
+          "quantity": "number",
+          "version": "number"
+        },
+        "order": {
+          "pk": "USER#{user_id}",
+          "sk": "ORDER#{order_id}",
+          "type": "ORDER",
+          "order_status": "string (COMPLETED, FAILED, PENDING)",
+          "subtotal_in_smallest_unit": "number",
+          "discount_in_smallest_unit": "number",
+          "shipping_in_smallest_unit": "number",
+          "total_in_smallest_unit": "number",
+          "currency": "string",
+          "created_at_utc": "string (ISO 8601)",
+          "version": "number"
+        },
+        "discount_rule": {
+          "pk": "DISCOUNT_RULE#{rule_id}",
+          "sk": "METADATA",
+          "type": "DISCOUNT_RULE",
+          "name": "string",
+          "description": "string",
+          "is_active": "boolean",
+          "is_deleted": "boolean",
+          "valid_from_utc": "string (ISO 8601)",
+          "valid_until_utc": "string (ISO 8601)",
+          "priority": "number",
+          "version": "number",
+          "conditions": [
+            {
+                "condition_type": "string (MIN_CART_SPEND, PRODUCT_IN_CART)",
+                "product_id": "string",
+                "quantity": "number",
+                "amount_in_smallest_unit": "number"
+            }
+          ],
+          "actions": [
+            {
+              "action_type": "string (PERCENTAGE_OFF, FIXED_AMOUNT_OFF, FREE_PRODUCT)",
+              "target_product_id": "string",
+              "value": "number",
+              "get_quantity": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tableName": "shopping-cart-audit-log",
+      "partitionKey": {
+        "name": "table_name",
+        "type": "S"
+      },
+      "sortKey": {
+        "name": "changed_at_utc#record_id",
+        "type": "S"
+      }
+    }
+  ]
+}

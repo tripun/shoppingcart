@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Minimal SAM template to show DynamoDB Stream -> Lambda for CDC proof-of-concept
+
+Resources:
+  DiscountRuleStreamFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: discount-rule-stream-processor
+      Handler: com.example.shoppingcart.lambda.DynamoStreamHandler::handleRequest
+      Runtime: java11
+      MemorySize: 512
+      Timeout: 30
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBReadPolicy:
+            TableName: DiscountRule
+      Events:
+        DiscountRuleStream:
+          Type: DynamoDB
+          Properties:
+            Stream: arn:aws:dynamodb:us-east-1:000000000000:table/DiscountRule/stream/2025-01-01T00:00:00.000
+            StartingPosition: TRIM_HORIZON
+
+  SqlCdcEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sql-cdc-event-processor
+      Handler: com.example.shoppingcart.lambda.SqlCdcHandler::handleRequest
+      Runtime: java11
+      MemorySize: 256
+      Timeout: 30
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+Outputs:
+  DiscountRuleFunctionArn:
+    Description: ARN of discount rule stream processor
+    Value: !GetAtt DiscountRuleStreamFunction.Arn

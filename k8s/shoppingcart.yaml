@@ -1,0 +1,228 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shopping-cart-config
+  namespace: shopping-cart
+data:
+  # Database Configuration
+  DATABASE_URL: "jdbc:postgresql://postgres:5432/shoppingcart"
+  DATABASE_USERNAME: "shoppingcart"
+  JPA_DIALECT: "org.hibernate.dialect.PostgreSQLDialect"
+  JPA_DDL_AUTO: "validate"
+
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  CACHE_TTL: "3600000"
+
+  # Kafka Configuration
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  KAFKA_CONSUMER_GROUP: "shopping-cart-k8s-group"
+
+  # Application Configuration
+  DEFAULT_REGION: "UK"
+  DEFAULT_CURRENCY: "GBP"
+  CART_MAX_ITEMS: "100"
+
+  # Monitoring
+  ACTUATOR_ENDPOINTS: "health,info,metrics,prometheus"
+  PROMETHEUS_ENABLED: "true"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shopping-cart-secrets
+  namespace: shopping-cart
+type: Opaque
+stringData:
+  DATABASE_PASSWORD: "secure-db-password"
+  REDIS_PASSWORD: "secure-redis-password"
+  JWT_SECRET: "your-super-secure-jwt-secret-key-here-base64-encoded"
+  AWS_ACCESS_KEY: "your-aws-access-key"
+  AWS_SECRET_KEY: "your-aws-secret-key"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shopping-cart-app
+  namespace: shopping-cart
+  labels:
+    app: shopping-cart
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: shopping-cart
+  template:
+    metadata:
+      labels:
+        app: shopping-cart
+        version: v1
+    spec:
+      serviceAccountName: shopping-cart-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: shopping-cart
+        image: ghcr.io/your-org/shopping-cart:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        envFrom:
+        - configMapRef:
+            name: shopping-cart-config
+        - secretRef:
+            name: shopping-cart-secrets
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "production"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: logs
+          mountPath: /var/log
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - shopping-cart
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shopping-cart-service
+  namespace: shopping-cart
+  labels:
+    app: shopping-cart
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: shopping-cart
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shopping-cart-ingress
+  namespace: shopping-cart
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+  - hosts:
+    - api.shoppingcart.com
+    secretName: shopping-cart-tls
+  rules:
+  - host: api.shoppingcart.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: shopping-cart-service
+            port:
+              number: 80
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shopping-cart-pdb
+  namespace: shopping-cart
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: shopping-cart
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: shopping-cart-hpa
+  namespace: shopping-cart
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: shopping-cart-app
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
